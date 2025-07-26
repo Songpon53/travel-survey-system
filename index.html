@@ -153,6 +153,12 @@
             box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
         }
 
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -270,6 +276,38 @@
             display: none;
         }
 
+        .debug-info {
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+            font-size: 12px;
+            font-family: monospace;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .connection-status {
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .connection-success {
+            background: #c6f6d5;
+            color: #22543d;
+            border: 1px solid #9ae6b4;
+        }
+
+        .connection-error {
+            background: #fed7d7;
+            color: #742a2a;
+            border: 1px solid #fc8181;
+        }
+
         @media (max-width: 1024px) {
             .container {
                 grid-template-columns: 1fr;
@@ -297,6 +335,11 @@
         <!-- Form Section -->
         <div class="form-section">
             <h1>🏖️ ลงทะเบียนเดินทาง</h1>
+            
+            <!-- Connection Status -->
+            <div id="connectionStatus" class="connection-status" style="display: none;">
+                <span id="connectionText">กำลังตรวจสอบการเชื่อมต่อ...</span>
+            </div>
             
             <div id="successMessage" class="success-message">
                 ✅ ลงทะเบียนสำเร็จแล้ว!
@@ -331,6 +374,12 @@
 
                 <button type="submit" class="submit-btn">🚀 ลงทะเบียน</button>
             </form>
+
+            <!-- Debug Information -->
+            <div class="debug-info" id="debugInfo">
+                <strong>Debug Log:</strong><br>
+                <div id="debugLog">รอการทำงาน...</div>
+            </div>
         </div>
 
         <!-- Dashboard Section -->
@@ -370,7 +419,7 @@
                 <h3 style="margin-bottom: 20px; color: #2d3748;">📋 รายชื่อผู้ลงทะเบียน</h3>
                 <div id="registrationsList">
                     <div style="text-align: center; color: #718096; padding: 40px;">
-                        ยังไม่มีการลงทะเบียน
+                        กำลังโหลดข้อมูล...
                     </div>
                 </div>
             </div>
@@ -378,23 +427,65 @@
     </div>
 
     <script>
-
-
+        // *** สำคัญ: แทนที่ URL นี้ด้วย URL ของ Google Apps Script Web App จริง ***
+        // ตัวอย่าง: 'https://script.google.com/macros/s/AKfycbxxx.../exec'
+        const scriptURL = 'https://script.google.com/macros/s/AKfycbz89uHLRtja5CrqnDG3vbcGVNjB7IdEN0cja1mBKOdzka9YbGgGCg37ydGsuiQyvBXd/exec';
+        
+        // *** ถ้ายังไม่ได้ URL ให้ใช้ค่านี้ก่อน (จะแสดงข้อมูลจำลอง) ***
+        const useMockData = scriptURL.includes('YOUR_DEPLOYMENT_ID');
+        
+        // ตัวแปรสำหรับเก็บข้อมูล
+        let registrations = [];
         let dateChart, peopleChart;
+
+        // ฟังก์ชัน Debug Log
+        function debugLog(message, type = 'info') {
+            const debugElement = document.getElementById('debugLog');
+            const timestamp = new Date().toLocaleTimeString('th-TH');
+            const color = type === 'error' ? 'red' : type === 'success' ? 'green' : 'blue';
+            
+            debugElement.innerHTML += `<div style="color: ${color};">[${timestamp}] ${message}</div>`;
+            debugElement.scrollTop = debugElement.scrollHeight;
+            
+            console.log(`[${timestamp}] ${message}`);
+        }
+
+        // ฟังก์ชันแสดงสถานะการเชื่อมต่อ
+        function showConnectionStatus(isConnected, message = '') {
+            const statusElement = document.getElementById('connectionStatus');
+            const textElement = document.getElementById('connectionText');
+            
+            statusElement.style.display = 'block';
+            
+            if (isConnected) {
+                statusElement.className = 'connection-status connection-success';
+                textElement.textContent = message || '✅ เชื่อมต่อ Google Sheets สำเร็จ';
+            } else {
+                statusElement.className = 'connection-status connection-error';
+                textElement.textContent = message || '❌ ไม่สามารถเชื่อมต่อ Google Sheets ได้';
+            }
+            
+            // ซ่อนหลังจาก 5 วินาที
+            setTimeout(() => {
+                statusElement.style.display = 'none';
+            }, 5000);
+        }
 
         // สร้างตัวเลือกวันที่ (เฉพาะเสาร์-อาทิตย์ จนถึงสิ้นปี)
         function generateWeekendDates() {
+            debugLog('กำลังสร้างตัวเลือกวันที่...');
+            
             const dateOptions = document.getElementById('dateOptions');
             const today = new Date();
-            const endOfYear = new Date(today.getFullYear(), 11, 31); // 31 ธ.ค.
+            const endOfYear = new Date(today.getFullYear(), 11, 31);
             const dates = [];
 
             let currentDate = new Date(today);
-            currentDate.setDate(currentDate.getDate() + 1); // เริ่มจากพรุ่งนี้
+            currentDate.setDate(currentDate.getDate() + 1);
 
             while (currentDate <= endOfYear) {
                 const dayOfWeek = currentDate.getDay();
-                if (dayOfWeek === 0 || dayOfWeek === 6) { // อาทิตย์ = 0, เสาร์ = 6
+                if (dayOfWeek === 0 || dayOfWeek === 6) {
                     dates.push(new Date(currentDate));
                 }
                 currentDate.setDate(currentDate.getDate() + 1);
@@ -417,6 +508,169 @@
                 `;
                 dateOptions.appendChild(optionDiv);
             });
+
+            debugLog(`สร้างตัวเลือกวันที่สำเร็จ: ${dates.length} วัน`, 'success');
+        }
+
+        // ทดสอบการเชื่อมต่อกับ Google Apps Script
+        async function testConnection() {
+            debugLog('ทดสอบการเชื่อมต่อกับ Google Apps Script...');
+            
+            // ถ้ายังไม่ได้แทนที่ URL ให้ใช้ข้อมูลจำลอง
+            if (useMockData) {
+                debugLog('ใช้ข้อมูลจำลอง - ยังไม่ได้ตั้งค่า Google Apps Script URL', 'error');
+                showConnectionStatus(false, '❌ ยังไม่ได้ตั้งค่า Google Apps Script URL');
+                loadMockData();
+                return false;
+            }
+            
+            try {
+                const response = await fetch(scriptURL, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    debugLog('การเชื่อมต่อสำเร็จ', 'success');
+                    showConnectionStatus(true);
+                    return true;
+                } else {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+            } catch (error) {
+                debugLog(`การเชื่อมต่อล้มเหลว: ${error.message}`, 'error');
+                showConnectionStatus(false, `❌ ไม่สามารถเชื่อมต่อได้: ${error.message}`);
+                loadMockData();
+                return false;
+            }
+        }
+
+        // โหลดข้อมูลจำลองสำหรับทดสอบ
+        function loadMockData() {
+            debugLog('โหลดข้อมูลจำลองสำหรับทดสอบ...');
+            
+            registrations = [
+                {
+                    name: "สมชาย ใจดี",
+                    peopleCount: 4,
+                    email: "somchai@example.com",
+                    dates: ["2025-08-02", "2025-08-03"],
+                    timestamp: "26/7/2025 14:30:00"
+                },
+                {
+                    name: "สมหญิง สุขใส",
+                    peopleCount: 2,
+                    email: "somying@example.com",
+                    dates: ["2025-08-09", "2025-08-10"],
+                    timestamp: "26/7/2025 15:45:00"
+                }
+            ];
+            
+            debugLog(`โหลดข้อมูลจำลอง ${registrations.length} รายการ`, 'success');
+            updateDashboard();
+        }
+
+        // โหลดข้อมูลจาก Google Sheets
+        async function loadRegistrationsFromSheets() {
+            if (useMockData) {
+                loadMockData();
+                return;
+            }
+            
+            try {
+                debugLog('กำลังโหลดข้อมูลจาก Google Sheets...');
+                
+                const response = await fetch(scriptURL, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const result = await response.json();
+                debugLog(`ได้รับข้อมูล: ${JSON.stringify(result).substring(0, 200)}...`);
+                
+                if (Array.isArray(result)) {
+                    registrations = result;
+                    debugLog(`โหลดข้อมูลสำเร็จ: ${result.length} รายการ`, 'success');
+                    updateDashboard();
+                } else if (result.error) {
+                    throw new Error(result.error);
+                } else {
+                    debugLog('ไม่พบข้อมูลหรือข้อมูลไม่ถูกต้อง');
+                    registrations = [];
+                    updateDashboard();
+                }
+                
+            } catch (error) {
+                debugLog(`เกิดข้อผิดพลาดในการโหลดข้อมูล: ${error.message}`, 'error');
+                loadMockData();
+            }
+        }
+
+        // ส่งข้อมูลไป Google Sheets
+        async function submitToGoogleSheets(formData) {
+            if (useMockData) {
+                debugLog('โหมดทดสอบ - เพิ่มข้อมูลในหน้าเว็บเท่านั้น');
+                
+                // เพิ่มข้อมูลใหม่เข้าไปใน registrations
+                const newRegistration = {
+                    name: formData.name,
+                    peopleCount: formData.peopleCount,
+                    email: formData.email,
+                    dates: formData.dates,
+                    timestamp: new Date().toLocaleString('th-TH')
+                };
+                
+                registrations.push(newRegistration);
+                updateDashboard();
+                
+                return { success: true, message: 'บันทึกในโหมดทดสอบ' };
+            }
+            
+            try {
+                debugLog(`กำลังส่งข้อมูล: ${JSON.stringify(formData)}`);
+                
+                const params = new URLSearchParams();
+                params.append('name', formData.name);
+                params.append('peopleCount', formData.peopleCount);
+                params.append('email', formData.email);
+                params.append('dates', JSON.stringify(formData.dates));
+                params.append('timestamp', new Date().toLocaleString('th-TH'));
+                
+                const response = await fetch(scriptURL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: params.toString()
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const result = await response.json();
+                debugLog(`ได้รับผลลัพธ์: ${JSON.stringify(result)}`);
+                
+                if (result.success) {
+                    debugLog('ส่งข้อมูลสำเร็จ', 'success');
+                    return result;
+                } else {
+                    throw new Error(result.error || 'Unknown error');
+                }
+                
+            } catch (error) {
+                debugLog(`เกิดข้อผิดพลาดในการส่งข้อมูล: ${error.message}`, 'error');
+                throw error;
+            }
         }
 
         // คำนวณสถิติ
@@ -428,9 +682,11 @@
             // หาวันที่ได้รับความนิยมมากที่สุด
             const dateCounts = {};
             registrations.forEach(reg => {
-                reg.dates.forEach(date => {
-                    dateCounts[date] = (dateCounts[date] || 0) + 1;
-                });
+                if (Array.isArray(reg.dates)) {
+                    reg.dates.forEach(date => {
+                        dateCounts[date] = (dateCounts[date] || 0) + 1;
+                    });
+                }
             });
 
             let popularDate = '-';
@@ -458,9 +714,11 @@
             const peopleCounts = {};
             
             registrations.forEach(reg => {
-                reg.dates.forEach(date => {
-                    dateCounts[date] = (dateCounts[date] || 0) + reg.peopleCount;
-                });
+                if (Array.isArray(reg.dates)) {
+                    reg.dates.forEach(date => {
+                        dateCounts[date] = (dateCounts[date] || 0) + reg.peopleCount;
+                    });
+                }
                 peopleCounts[reg.peopleCount] = (peopleCounts[reg.peopleCount] || 0) + 1;
             });
 
@@ -563,7 +821,7 @@
             }
 
             listContainer.innerHTML = registrations.map(reg => {
-                const dateLabels = reg.dates.map(date => {
+                const dateLabels = (Array.isArray(reg.dates) ? reg.dates : []).map(date => {
                     const dateObj = new Date(date);
                     const dayNames = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
                     return `${dayNames[dateObj.getDay()]} ${dateObj.getDate()}/${dateObj.getMonth() + 1}`;
@@ -572,117 +830,43 @@
                 return `
                     <div class="registration-item">
                         <div class="registration-info">
-                            <div class="registration-name">${reg.name}</div>
+                            <div class="registration-name">${reg.name || '-'}</div>
                             <div class="registration-details">
-                                📧 ${reg.email} | 📅 ${dateLabels} | ⏰ ${reg.timestamp}
+                                📧 ${reg.email || '-'} | 📅 ${dateLabels || '-'} | ⏰ ${reg.timestamp || '-'}
                             </div>
                         </div>
-                        <div class="registration-count">${reg.peopleCount}</div>
+                        <div class="registration-count">${reg.peopleCount || 0}</div>
                     </div>
                 `;
             }).join('');
-        }
-
-        // URL ของ Google Apps Script Web App - แทนที่ด้วย URL จริงที่ได้จาก Google Apps Script
-        const scriptURL = 'https://script.google.com/macros/s/AKfycbzwvgxIjSwRyo_1YUeRNSDccqN7rolzUvetq59CvaLaWQXnSy6P_AAOJGrN_BzhZEju/exec';
-        
-        // ส่งข้อมูลไป Google Sheets (จริง)
-        async function submitToGoogleSheets(formData) {
-            try {
-                console.log('กำลังส่งข้อมูล:', formData);
-                
-                // สร้าง FormData สำหรับ Google Apps Script
-                const form = new FormData();
-                form.append('data', JSON.stringify(formData));
-                
-                const response = await fetch(scriptURL, {
-                    method: 'POST',
-                    body: form
-                });
-                
-                // ตรวจสอบการตอบกลับ
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                
-                const result = await response.text();
-                console.log('ได้รับการตอบกลับ:', result);
-                
-                try {
-                    const jsonResult = JSON.parse(result);
-                    return jsonResult;
-                } catch (parseError) {
-                    console.log('ไม่สามารถแปลง JSON ได้, ถือว่าสำเร็จ');
-                    return { success: true };
-                }
-                
-            } catch (error) {
-                console.error('Error submitting data:', error);
-                throw error;
-            }
-        }
-
-        // ฟังก์ชันโหลดข้อมูลจริงจาก Google Sheets
-        async function loadRegistrationsFromSheets() {
-            try {
-                console.log('กำลังโหลดข้อมูลจาก Google Sheets...');
-                
-                const response = await fetch(scriptURL);
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                
-                const result = await response.text();
-                console.log('ได้รับข้อมูล:', result);
-                
-                let data;
-                try {
-                    data = JSON.parse(result);
-                } catch (parseError) {
-                    console.error('ไม่สามารถแปลง JSON ได้:', parseError);
-                    throw new Error('ข้อมูลที่ได้รับไม่ใช่ JSON ที่ถูกต้อง');
-                }
-                
-                // ตรวจสอบว่าข้อมูลเป็น array หรือไม่
-                if (Array.isArray(data)) {
-                    registrations = data;
-                    console.log('โหลดข้อมูลสำเร็จ:', data.length, 'รายการ');
-                    updateDashboard();
-                } else if (data.error) {
-                    console.error('เกิดข้อผิดพลาดจาก Server:', data.error);
-                    updateDashboard(); // ใช้ข้อมูลจำลอง
-                } else {
-                    console.log('ไม่พบข้อมูลหรือข้อมูลไม่ถูกต้อง');
-                    updateDashboard(); // ใช้ข้อมูลจำลอง
-                }
-                
-            } catch (error) {
-                console.error('เกิดข้อผิดพลาดในการโหลดข้อมูล:', error);
-                console.log('ใช้ข้อมูลจำลองแทน');
-                updateDashboard();
-            }
         }
 
         // Handle form submission
         document.getElementById('travelForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             
+            debugLog('เริ่มต้นการลงทะเบียน...');
+            
             const formData = new FormData(this);
             const selectedDates = Array.from(document.querySelectorAll('input[name="dates"]:checked'))
                 .map(cb => cb.value);
             
+            debugLog(`วันที่ที่เลือก: ${selectedDates.join(', ')}`);
+            
             if (selectedDates.length === 0) {
                 showMessage('error', 'กรุณาเลือกวันที่อย่างน้อย 1 วัน');
+                debugLog('ไม่ได้เลือกวันที่', 'error');
                 return;
             }
 
             const submitData = {
                 name: formData.get('name'),
-                peopleCount: formData.get('peopleCount'),
+                peopleCount: parseInt(formData.get('peopleCount')),
                 email: formData.get('email'),
                 dates: selectedDates
             };
+
+            debugLog(`ข้อมูลที่จะส่ง: ${JSON.stringify(submitData)}`);
 
             // แสดง loading บนปุ่ม
             const submitBtn = this.querySelector('.submit-btn');
@@ -691,32 +875,22 @@
             submitBtn.disabled = true;
 
             try {
+                // ส่งข้อมูลไป Google Sheets
                 const result = await submitToGoogleSheets(submitData);
                 
-                if (result.success) {
-                    showMessage('success', 'ลงทะเบียนสำเร็จแล้ว!');
-                    this.reset();
-                    
-                    // เพิ่มข้อมูลใหม่เข้าไปใน registrations เพื่อแสดงผลทันที
-                    registrations.push({
-                        name: submitData.name,
-                        peopleCount: parseInt(submitData.peopleCount),
-                        email: submitData.email,
-                        dates: submitData.dates,
-                        timestamp: new Date().toLocaleString('th-TH')
-                    });
-                    
-                    updateDashboard();
-                    
-                    // โหลดข้อมูลใหม่จาก Google Sheets หลังจาก 3 วินาที
-                    setTimeout(() => {
-                        loadRegistrationsFromSheets();
-                    }, 3000);
-                }
+                debugLog('ส่งข้อมูลสำเร็จ', 'success');
+                showMessage('success', 'ลงทะเบียนสำเร็จแล้ว! ข้อมูลถูกบันทึกใน Google Sheets');
+                this.reset();
+                
+                // โหลดข้อมูลใหม่
+                setTimeout(() => {
+                    loadRegistrationsFromSheets();
+                }, 2000);
                 
             } catch (error) {
-                showMessage('error', 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง');
-                console.error('Submit error:', error);
+                debugLog(`เกิดข้อผิดพลาดในการส่งข้อมูล: ${error.message}`, 'error');
+                showMessage('error', 'เกิดข้อผิดพลาดในการส่งข้อมูล กรุณาลองใหม่อีกครั้ง');
+                
             } finally {
                 // คืนค่าปุ่มเป็นปกติ
                 submitBtn.textContent = originalText;
@@ -732,12 +906,12 @@
                 successMsg.textContent = message;
                 successMsg.style.display = 'block';
                 errorMsg.style.display = 'none';
-                setTimeout(() => successMsg.style.display = 'none', 3000);
+                setTimeout(() => successMsg.style.display = 'none', 5000);
             } else {
                 errorMsg.textContent = message;
                 errorMsg.style.display = 'block';
                 successMsg.style.display = 'none';
-                setTimeout(() => errorMsg.style.display = 'none', 3000);
+                setTimeout(() => errorMsg.style.display = 'none', 5000);
             }
         }
 
@@ -749,20 +923,20 @@
 
         // เริ่มต้นระบบ
         document.addEventListener('DOMContentLoaded', function() {
+            debugLog('เริ่มต้นระบบ...');
+            
             generateWeekendDates();
+            updateDashboard(); // แสดงข้อมูลเริ่มต้น
             
-            // โหลดข้อมูลจริงจาก Google Sheets
-            console.log('กำลังโหลดข้อมูลจาก Google Sheets...');
-            loadRegistrationsFromSheets();
-            
-            // ถ้าโหลดข้อมูลจริงไม่ได้ ให้แสดงข้อมูลจำลอง
-            setTimeout(() => {
-                if (registrations.length === 0) {
-                    console.log('ไม่สามารถโหลดข้อมูลจาก Google Sheets ได้ ใช้ข้อมูลจำลอง');
-                    // ใช้ข้อมูลจำลองที่มีอยู่แล้ว
-                    updateDashboard();
+            // ทดสอบการเชื่อมต่อและโหลดข้อมูล
+            setTimeout(async () => {
+                const isConnected = await testConnection();
+                if (isConnected) {
+                    loadRegistrationsFromSheets();
                 }
-            }, 5000); // รอ 5 วินาที
+            }, 1000);
+            
+            debugLog('ระบบพร้อมใช้งาน', 'success');
         });
     </script>
 </body>
