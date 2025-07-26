@@ -378,22 +378,7 @@
     </div>
 
     <script>
-// ฟังก์ชันโหลดข้อมูลจาก Google Sheets
-async function loadRegistrationsFromSheets() {
-    try {
-        const response = await fetch(scriptURL);
-        const data = await response.json();
-        
-        if (Array.isArray(data)) {
-            registrations = data;
-            updateDashboard();
-        }
-        
-    } catch (error) {
-        console.error('Error loading data:', error);
-        // ถ้าโหลดไม่ได้ ใช้ข้อมูลจำลอง
-    }
-}
+
 
         let dateChart, peopleChart;
 
@@ -598,26 +583,84 @@ async function loadRegistrationsFromSheets() {
             }).join('');
         }
 
-        // ส่งข้อมูลไป Google Sheets (จำลอง)
+        // URL ของ Google Apps Script Web App - แทนที่ด้วย URL จริงที่ได้จาก Google Apps Script
+        const scriptURL = 'https://script.google.com/macros/s/AKfycbzwvgxIjSwRyo_1YUeRNSDccqN7rolzUvetq59CvaLaWQXnSy6P_AAOJGrN_BzhZEju/exec';
+        
+        // ส่งข้อมูลไป Google Sheets (จริง)
         async function submitToGoogleSheets(formData) {
-            // URL ของ Google Apps Script Web App
-            const scriptURL = 'https://script.google.com/macros/s/AKfycbwPwUxWYoBAP1gdFV9SkCTKd5XURLIJXn615zYQAOIk_fyVkN19_e8O3QaJaX41JwqR/exec';
-            
             try {
+                console.log('กำลังส่งข้อมูล:', formData);
+                
+                // สร้าง FormData สำหรับ Google Apps Script
+                const form = new FormData();
+                form.append('data', JSON.stringify(formData));
+                
                 const response = await fetch(scriptURL, {
                     method: 'POST',
-                    mode: 'no-cors',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(formData)
+                    body: form
                 });
                 
-                return { success: true };
+                // ตรวจสอบการตอบกลับ
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const result = await response.text();
+                console.log('ได้รับการตอบกลับ:', result);
+                
+                try {
+                    const jsonResult = JSON.parse(result);
+                    return jsonResult;
+                } catch (parseError) {
+                    console.log('ไม่สามารถแปลง JSON ได้, ถือว่าสำเร็จ');
+                    return { success: true };
+                }
                 
             } catch (error) {
-                console.error('Error:', error);
+                console.error('Error submitting data:', error);
                 throw error;
+            }
+        }
+
+        // ฟังก์ชันโหลดข้อมูลจริงจาก Google Sheets
+        async function loadRegistrationsFromSheets() {
+            try {
+                console.log('กำลังโหลดข้อมูลจาก Google Sheets...');
+                
+                const response = await fetch(scriptURL);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const result = await response.text();
+                console.log('ได้รับข้อมูล:', result);
+                
+                let data;
+                try {
+                    data = JSON.parse(result);
+                } catch (parseError) {
+                    console.error('ไม่สามารถแปลง JSON ได้:', parseError);
+                    throw new Error('ข้อมูลที่ได้รับไม่ใช่ JSON ที่ถูกต้อง');
+                }
+                
+                // ตรวจสอบว่าข้อมูลเป็น array หรือไม่
+                if (Array.isArray(data)) {
+                    registrations = data;
+                    console.log('โหลดข้อมูลสำเร็จ:', data.length, 'รายการ');
+                    updateDashboard();
+                } else if (data.error) {
+                    console.error('เกิดข้อผิดพลาดจาก Server:', data.error);
+                    updateDashboard(); // ใช้ข้อมูลจำลอง
+                } else {
+                    console.log('ไม่พบข้อมูลหรือข้อมูลไม่ถูกต้อง');
+                    updateDashboard(); // ใช้ข้อมูลจำลอง
+                }
+                
+            } catch (error) {
+                console.error('เกิดข้อผิดพลาดในการโหลดข้อมูล:', error);
+                console.log('ใช้ข้อมูลจำลองแทน');
+                updateDashboard();
             }
         }
 
@@ -641,15 +684,43 @@ async function loadRegistrationsFromSheets() {
                 dates: selectedDates
             };
 
+            // แสดง loading บนปุ่ม
+            const submitBtn = this.querySelector('.submit-btn');
+            const originalText = submitBtn.textContent;
+            submitBtn.textContent = '⏳ กำลังส่งข้อมูล...';
+            submitBtn.disabled = true;
+
             try {
                 const result = await submitToGoogleSheets(submitData);
+                
                 if (result.success) {
                     showMessage('success', 'ลงทะเบียนสำเร็จแล้ว!');
                     this.reset();
+                    
+                    // เพิ่มข้อมูลใหม่เข้าไปใน registrations เพื่อแสดงผลทันที
+                    registrations.push({
+                        name: submitData.name,
+                        peopleCount: parseInt(submitData.peopleCount),
+                        email: submitData.email,
+                        dates: submitData.dates,
+                        timestamp: new Date().toLocaleString('th-TH')
+                    });
+                    
                     updateDashboard();
+                    
+                    // โหลดข้อมูลใหม่จาก Google Sheets หลังจาก 3 วินาที
+                    setTimeout(() => {
+                        loadRegistrationsFromSheets();
+                    }, 3000);
                 }
+                
             } catch (error) {
                 showMessage('error', 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง');
+                console.error('Submit error:', error);
+            } finally {
+                // คืนค่าปุ่มเป็นปกติ
+                submitBtn.textContent = originalText;
+                submitBtn.disabled = false;
             }
         });
 
@@ -676,10 +747,22 @@ async function loadRegistrationsFromSheets() {
             updateRegistrationsList();
         }
 
-        // เริ่มต้น
+        // เริ่มต้นระบบ
         document.addEventListener('DOMContentLoaded', function() {
             generateWeekendDates();
-            updateDashboard();
+            
+            // โหลดข้อมูลจริงจาก Google Sheets
+            console.log('กำลังโหลดข้อมูลจาก Google Sheets...');
+            loadRegistrationsFromSheets();
+            
+            // ถ้าโหลดข้อมูลจริงไม่ได้ ให้แสดงข้อมูลจำลอง
+            setTimeout(() => {
+                if (registrations.length === 0) {
+                    console.log('ไม่สามารถโหลดข้อมูลจาก Google Sheets ได้ ใช้ข้อมูลจำลอง');
+                    // ใช้ข้อมูลจำลองที่มีอยู่แล้ว
+                    updateDashboard();
+                }
+            }, 5000); // รอ 5 วินาที
         });
     </script>
 </body>
