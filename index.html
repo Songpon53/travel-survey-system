@@ -378,30 +378,22 @@
     </div>
 
     <script>
-        // ข้อมูลจำลอง (ในการใช้งานจริงจะดึงจาก Google Sheets)
-        let registrations = [
-            {
-                name: "สมชาย ใจดี",
-                peopleCount: 4,
-                email: "somchai@email.com",
-                dates: ["2025-08-02", "2025-08-09"],
-                timestamp: "2025-07-26 10:30"
-            },
-            {
-                name: "สมหญิง สวยงาม",
-                peopleCount: 2,
-                email: "somying@email.com",
-                dates: ["2025-08-02", "2025-08-16"],
-                timestamp: "2025-07-26 11:15"
-            },
-            {
-                name: "วิชาญ เก่งมาก",
-                peopleCount: 3,
-                email: "wichan@email.com",
-                dates: ["2025-08-09", "2025-08-16", "2025-08-23"],
-                timestamp: "2025-07-26 14:20"
-            }
-        ];
+// ฟังก์ชันโหลดข้อมูลจาก Google Sheets
+async function loadRegistrationsFromSheets() {
+    try {
+        const response = await fetch(scriptURL);
+        const data = await response.json();
+        
+        if (Array.isArray(data)) {
+            registrations = data;
+            updateDashboard();
+        }
+        
+    } catch (error) {
+        console.error('Error loading data:', error);
+        // ถ้าโหลดไม่ได้ ใช้ข้อมูลจำลอง
+    }
+}
 
         let dateChart, peopleChart;
 
@@ -609,22 +601,24 @@
         // ส่งข้อมูลไป Google Sheets (จำลอง)
         async function submitToGoogleSheets(formData) {
             // URL ของ Google Apps Script Web App
-            // const scriptURL = 'https://script.google.com/macros/s/AKfycbwPwUxWYoBAP1gdFV9SkCTKd5XURLIJXn615zYQAOIk_fyVkN19_e8O3QaJaX41JwqR/exec';
+            const scriptURL = 'https://script.google.com/macros/s/AKfycbwPwUxWYoBAP1gdFV9SkCTKd5XURLIJXn615zYQAOIk_fyVkN19_e8O3QaJaX41JwqR/exec';
             
-            // ใน demo นี้เราจะจำลองการส่งข้อมูล
-            return new Promise((resolve) => {
-                setTimeout(() => {
-                    // เพิ่มข้อมูลใหม่เข้าไปใน array
-                    registrations.push({
-                        name: formData.name,
-                        peopleCount: parseInt(formData.peopleCount),
-                        email: formData.email,
-                        dates: formData.dates,
-                        timestamp: new Date().toLocaleString('th-TH')
-                    });
-                    resolve({ success: true });
-                }, 1000);
-            });
+            try {
+                const response = await fetch(scriptURL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(formData)
+                });
+                
+                return { success: true };
+                
+            } catch (error) {
+                console.error('Error:', error);
+                throw error;
+            }
         }
 
         // Handle form submission
