@@ -427,9 +427,9 @@
     </div>
 
     <script>
-        // *** สำคัญ: แทนที่ URL นี้ด้วย URL ของ Google Apps Script Web App จริง ***
-        // ตัวอย่าง: 'https://script.google.com/macros/s/AKfycbxxx.../exec'
-        const scriptURL = 'https://script.google.com/macros/s/AKfycbzTFNE3cbPTqeQvZfiLifILnxMfosdS961ScATnSa8/dev';
+        // *** แทนที่ URL นี้ด้วย URL ของ Google Apps Script Web App จริง ***
+        // ตัวอย่าง: 'https://script.google.com/macros/s/AKfycbxxx.../exec' (สำคัญ: ต้องลงท้ายด้วย /exec)
+        const scriptURL = 'https://script.google.com/macros/s/AKfycbyR8rSFf20r8jTNDaxzeFEhLuJfRJvtjY_nUfp8-drMMzeXgPKJWRnZ5_Ww3MTTVZWR/exec';
         
         // *** ถ้ายังไม่ได้ URL ให้ใช้ค่านี้ก่อน (จะแสดงข้อมูลจำลอง) ***
         const useMockData = scriptURL.includes('YOUR_DEPLOYMENT_ID');
@@ -525,12 +525,20 @@
             }
             
             try {
+                // เพิ่ม timeout และ retry logic
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 วินาที timeout
+                
                 const response = await fetch(scriptURL, {
                     method: 'GET',
+                    mode: 'cors',
                     headers: {
                         'Content-Type': 'application/json'
-                    }
+                    },
+                    signal: controller.signal
                 });
+                
+                clearTimeout(timeoutId);
                 
                 if (response.ok) {
                     debugLog('การเชื่อมต่อสำเร็จ', 'success');
@@ -541,8 +549,13 @@
                 }
                 
             } catch (error) {
-                debugLog(`การเชื่อมต่อล้มเหลว: ${error.message}`, 'error');
-                showConnectionStatus(false, `❌ ไม่สามารถเชื่อมต่อได้: ${error.message}`);
+                if (error.name === 'AbortError') {
+                    debugLog('การเชื่อมต่อ timeout (เกิน 10 วินาที)', 'error');
+                    showConnectionStatus(false, '❌ การเชื่อมต่อใช้เวลานานเกินไป');
+                } else {
+                    debugLog(`การเชื่อมต่อล้มเหลว: ${error.message}`, 'error');
+                    showConnectionStatus(false, `❌ ไม่สามารถเชื่อมต่อได้: ${error.message}`);
+                }
                 loadMockData();
                 return false;
             }
@@ -583,12 +596,19 @@
             try {
                 debugLog('กำลังโหลดข้อมูลจาก Google Sheets...');
                 
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 วินาที timeout
+                
                 const response = await fetch(scriptURL, {
                     method: 'GET',
+                    mode: 'cors',
                     headers: {
                         'Content-Type': 'application/json'
-                    }
+                    },
+                    signal: controller.signal
                 });
+                
+                clearTimeout(timeoutId);
                 
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -610,334 +630,7 @@
                 }
                 
             } catch (error) {
-                debugLog(`เกิดข้อผิดพลาดในการโหลดข้อมูล: ${error.message}`, 'error');
-                loadMockData();
-            }
-        }
-
-        // ส่งข้อมูลไป Google Sheets
-        async function submitToGoogleSheets(formData) {
-            if (useMockData) {
-                debugLog('โหมดทดสอบ - เพิ่มข้อมูลในหน้าเว็บเท่านั้น');
-                
-                // เพิ่มข้อมูลใหม่เข้าไปใน registrations
-                const newRegistration = {
-                    name: formData.name,
-                    peopleCount: formData.peopleCount,
-                    email: formData.email,
-                    dates: formData.dates,
-                    timestamp: new Date().toLocaleString('th-TH')
-                };
-                
-                registrations.push(newRegistration);
-                updateDashboard();
-                
-                return { success: true, message: 'บันทึกในโหมดทดสอบ' };
-            }
-            
-            try {
-                debugLog(`กำลังส่งข้อมูล: ${JSON.stringify(formData)}`);
-                
-                const params = new URLSearchParams();
-                params.append('name', formData.name);
-                params.append('peopleCount', formData.peopleCount);
-                params.append('email', formData.email);
-                params.append('dates', JSON.stringify(formData.dates));
-                params.append('timestamp', new Date().toLocaleString('th-TH'));
-                
-                const response = await fetch(scriptURL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
-                    body: params.toString()
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                
-                const result = await response.json();
-                debugLog(`ได้รับผลลัพธ์: ${JSON.stringify(result)}`);
-                
-                if (result.success) {
-                    debugLog('ส่งข้อมูลสำเร็จ', 'success');
-                    return result;
+                if (error.name === 'AbortError') {
+                    debugLog('การโหลดข้อมูล timeout', 'error');
                 } else {
-                    throw new Error(result.error || 'Unknown error');
-                }
-                
-            } catch (error) {
-                debugLog(`เกิดข้อผิดพลาดในการส่งข้อมูล: ${error.message}`, 'error');
-                throw error;
-            }
-        }
-
-        // คำนวณสถิติ
-        function updateStats() {
-            const totalRegs = registrations.length;
-            const totalPeople = registrations.reduce((sum, reg) => sum + reg.peopleCount, 0);
-            const avgPeople = totalRegs > 0 ? (totalPeople / totalRegs).toFixed(1) : 0;
-
-            // หาวันที่ได้รับความนิยมมากที่สุด
-            const dateCounts = {};
-            registrations.forEach(reg => {
-                if (Array.isArray(reg.dates)) {
-                    reg.dates.forEach(date => {
-                        dateCounts[date] = (dateCounts[date] || 0) + 1;
-                    });
-                }
-            });
-
-            let popularDate = '-';
-            let maxCount = 0;
-            for (const [date, count] of Object.entries(dateCounts)) {
-                if (count > maxCount) {
-                    maxCount = count;
-                    const dateObj = new Date(date);
-                    const dayNames = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
-                    const monthNames = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-                    popularDate = `${dateObj.getDate()} ${monthNames[dateObj.getMonth()]}`;
-                }
-            }
-
-            document.getElementById('totalRegistrations').textContent = totalRegs;
-            document.getElementById('totalPeople').textContent = totalPeople;
-            document.getElementById('popularDate').textContent = popularDate;
-            document.getElementById('averagePeople').textContent = avgPeople;
-        }
-
-        // อัพเดท Charts
-        function updateCharts() {
-            // Chart 1: จำนวนคนต่อวัน
-            const dateCounts = {};
-            const peopleCounts = {};
-            
-            registrations.forEach(reg => {
-                if (Array.isArray(reg.dates)) {
-                    reg.dates.forEach(date => {
-                        dateCounts[date] = (dateCounts[date] || 0) + reg.peopleCount;
-                    });
-                }
-                peopleCounts[reg.peopleCount] = (peopleCounts[reg.peopleCount] || 0) + 1;
-            });
-
-            // Chart 1 Data
-            const sortedDates = Object.keys(dateCounts).sort();
-            const dateLabels = sortedDates.map(date => {
-                const dateObj = new Date(date);
-                const dayNames = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
-                const monthNames = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-                return `${dayNames[dateObj.getDay()]} ${dateObj.getDate()}/${dateObj.getMonth() + 1}`;
-            });
-            const dateData = sortedDates.map(date => dateCounts[date]);
-
-            if (dateChart) dateChart.destroy();
-            const ctx1 = document.getElementById('dateChart').getContext('2d');
-            dateChart = new Chart(ctx1, {
-                type: 'bar',
-                data: {
-                    labels: dateLabels,
-                    datasets: [{
-                        label: 'จำนวนคน',
-                        data: dateData,
-                        backgroundColor: 'rgba(102, 126, 234, 0.8)',
-                        borderColor: 'rgba(102, 126, 234, 1)',
-                        borderWidth: 2,
-                        borderRadius: 8
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: {
-                            display: false
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                stepSize: 1
-                            }
-                        }
-                    }
-                }
-            });
-
-            // Chart 2: People Distribution
-            const peopleLabels = Object.keys(peopleCounts).sort((a, b) => parseInt(a) - parseInt(b));
-            const peopleData = peopleLabels.map(label => peopleCounts[label]);
-
-            if (peopleChart) peopleChart.destroy();
-            const ctx2 = document.getElementById('peopleChart').getContext('2d');
-            peopleChart = new Chart(ctx2, {
-                type: 'doughnut',
-                data: {
-                    labels: peopleLabels.map(label => `${label} คน`),
-                    datasets: [{
-                        data: peopleData,
-                        backgroundColor: [
-                            'rgba(255, 99, 132, 0.8)',
-                            'rgba(54, 162, 235, 0.8)',
-                            'rgba(255, 205, 86, 0.8)',
-                            'rgba(75, 192, 192, 0.8)',
-                            'rgba(153, 102, 255, 0.8)',
-                            'rgba(255, 159, 64, 0.8)'
-                        ],
-                        borderColor: [
-                            'rgba(255, 99, 132, 1)',
-                            'rgba(54, 162, 235, 1)',
-                            'rgba(255, 205, 86, 1)',
-                            'rgba(75, 192, 192, 1)',
-                            'rgba(153, 102, 255, 1)',
-                            'rgba(255, 159, 64, 1)'
-                        ],
-                        borderWidth: 2
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: {
-                            position: 'bottom'
-                        }
-                    }
-                }
-            });
-        }
-
-        // อัพเดทรายชื่อ
-        function updateRegistrationsList() {
-            const listContainer = document.getElementById('registrationsList');
-            
-            if (registrations.length === 0) {
-                listContainer.innerHTML = `
-                    <div style="text-align: center; color: #718096; padding: 40px;">
-                        ยังไม่มีการลงทะเบียน
-                    </div>
-                `;
-                return;
-            }
-
-            listContainer.innerHTML = registrations.map(reg => {
-                const dateLabels = (Array.isArray(reg.dates) ? reg.dates : []).map(date => {
-                    const dateObj = new Date(date);
-                    const dayNames = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
-                    return `${dayNames[dateObj.getDay()]} ${dateObj.getDate()}/${dateObj.getMonth() + 1}`;
-                }).join(', ');
-
-                return `
-                    <div class="registration-item">
-                        <div class="registration-info">
-                            <div class="registration-name">${reg.name || '-'}</div>
-                            <div class="registration-details">
-                                📧 ${reg.email || '-'} | 📅 ${dateLabels || '-'} | ⏰ ${reg.timestamp || '-'}
-                            </div>
-                        </div>
-                        <div class="registration-count">${reg.peopleCount || 0}</div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        // Handle form submission
-        document.getElementById('travelForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            debugLog('เริ่มต้นการลงทะเบียน...');
-            
-            const formData = new FormData(this);
-            const selectedDates = Array.from(document.querySelectorAll('input[name="dates"]:checked'))
-                .map(cb => cb.value);
-            
-            debugLog(`วันที่ที่เลือก: ${selectedDates.join(', ')}`);
-            
-            if (selectedDates.length === 0) {
-                showMessage('error', 'กรุณาเลือกวันที่อย่างน้อย 1 วัน');
-                debugLog('ไม่ได้เลือกวันที่', 'error');
-                return;
-            }
-
-            const submitData = {
-                name: formData.get('name'),
-                peopleCount: parseInt(formData.get('peopleCount')),
-                email: formData.get('email'),
-                dates: selectedDates
-            };
-
-            debugLog(`ข้อมูลที่จะส่ง: ${JSON.stringify(submitData)}`);
-
-            // แสดง loading บนปุ่ม
-            const submitBtn = this.querySelector('.submit-btn');
-            const originalText = submitBtn.textContent;
-            submitBtn.textContent = '⏳ กำลังส่งข้อมูล...';
-            submitBtn.disabled = true;
-
-            try {
-                // ส่งข้อมูลไป Google Sheets
-                const result = await submitToGoogleSheets(submitData);
-                
-                debugLog('ส่งข้อมูลสำเร็จ', 'success');
-                showMessage('success', 'ลงทะเบียนสำเร็จแล้ว! ข้อมูลถูกบันทึกใน Google Sheets');
-                this.reset();
-                
-                // โหลดข้อมูลใหม่
-                setTimeout(() => {
-                    loadRegistrationsFromSheets();
-                }, 2000);
-                
-            } catch (error) {
-                debugLog(`เกิดข้อผิดพลาดในการส่งข้อมูล: ${error.message}`, 'error');
-                showMessage('error', 'เกิดข้อผิดพลาดในการส่งข้อมูล กรุณาลองใหม่อีกครั้ง');
-                
-            } finally {
-                // คืนค่าปุ่มเป็นปกติ
-                submitBtn.textContent = originalText;
-                submitBtn.disabled = false;
-            }
-        });
-
-        function showMessage(type, message) {
-            const successMsg = document.getElementById('successMessage');
-            const errorMsg = document.getElementById('errorMessage');
-            
-            if (type === 'success') {
-                successMsg.textContent = message;
-                successMsg.style.display = 'block';
-                errorMsg.style.display = 'none';
-                setTimeout(() => successMsg.style.display = 'none', 5000);
-            } else {
-                errorMsg.textContent = message;
-                errorMsg.style.display = 'block';
-                successMsg.style.display = 'none';
-                setTimeout(() => errorMsg.style.display = 'none', 5000);
-            }
-        }
-
-        function updateDashboard() {
-            updateStats();
-            updateCharts();
-            updateRegistrationsList();
-        }
-
-        // เริ่มต้นระบบ
-        document.addEventListener('DOMContentLoaded', function() {
-            debugLog('เริ่มต้นระบบ...');
-            
-            generateWeekendDates();
-            updateDashboard(); // แสดงข้อมูลเริ่มต้น
-            
-            // ทดสอบการเชื่อมต่อและโหลดข้อมูล
-            setTimeout(async () => {
-                const isConnected = await testConnection();
-                if (isConnected) {
-                    loadRegistrationsFromSheets();
-                }
-            }, 1000);
-            
-            debugLog('ระบบพร้อมใช้งาน', 'success');
-        });
-    </script>
-</body>
-</html>
+                    debugLog(`เกิดข้อผิดพลาดในการโหลดข
